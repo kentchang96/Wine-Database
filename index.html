@@ -172,7 +172,7 @@
     .wine-image {
       width: 100%;
       height: 180px;
-      object-fit: cover;
+      object-fit: contain;
       background: linear-gradient(135deg, var(--gray-light) 0%, #f0eee9 100%);
       position: relative;
     }
@@ -557,15 +557,25 @@
   </div>
 
   <script>
-    // Storage using window.storage for persistence
+    // Storage using window.storage for persistence with localStorage fallback
     let wines = [];
     let currentRating = 0;
     let currentPhoto = '';
     let editingId = null;
     let currentFilter = 'all';
+    let useLocalStorage = false;
+
+    // Check if window.storage is available
+    function checkStorageAvailability() {
+      return typeof window.storage !== 'undefined' && window.storage !== null;
+    }
 
     // Initialize app
     async function init() {
+      useLocalStorage = !checkStorageAvailability();
+      if (useLocalStorage) {
+        console.log('Using localStorage as fallback');
+      }
       await loadWines();
       renderWines();
       setupEventListeners();
@@ -574,18 +584,25 @@
     // Load wines from storage
     async function loadWines() {
       try {
-        const keys = await window.storage.list('wine:');
-        if (keys && keys.keys) {
-          wines = [];
-          for (const key of keys.keys) {
-            const result = await window.storage.get(key);
-            if (result && result.value) {
-              wines.push(JSON.parse(result.value));
+        if (useLocalStorage) {
+          // Use localStorage fallback
+          const storedWines = localStorage.getItem('wines');
+          wines = storedWines ? JSON.parse(storedWines) : [];
+        } else {
+          // Use window.storage
+          const keys = await window.storage.list('wine:');
+          if (keys && keys.keys) {
+            wines = [];
+            for (const key of keys.keys) {
+              const result = await window.storage.get(key);
+              if (result && result.value) {
+                wines.push(JSON.parse(result.value));
+              }
             }
           }
         }
       } catch (error) {
-        console.log('Starting with empty collection');
+        console.log('Starting with empty collection:', error);
         wines = [];
       }
     }
@@ -593,8 +610,15 @@
     // Save wine to storage
     async function saveWine(wine) {
       try {
-        await window.storage.set(`wine:${wine.id}`, JSON.stringify(wine));
-        return true;
+        if (useLocalStorage) {
+          // Use localStorage fallback - save all wines
+          localStorage.setItem('wines', JSON.stringify(wines));
+          return true;
+        } else {
+          // Use window.storage
+          await window.storage.set(`wine:${wine.id}`, JSON.stringify(wine));
+          return true;
+        }
       } catch (error) {
         console.error('Error saving wine:', error);
         alert('Failed to save wine. Please try again.');
@@ -605,8 +629,15 @@
     // Delete wine from storage
     async function deleteWine(id) {
       try {
-        await window.storage.delete(`wine:${id}`);
-        return true;
+        if (useLocalStorage) {
+          // Use localStorage fallback - save updated wines array
+          localStorage.setItem('wines', JSON.stringify(wines));
+          return true;
+        } else {
+          // Use window.storage
+          await window.storage.delete(`wine:${id}`);
+          return true;
+        }
       } catch (error) {
         console.error('Error deleting wine:', error);
         return false;
@@ -823,16 +854,26 @@
         dateAdded: editingId ? wines.find(w => w.id === editingId).dateAdded : new Date().toISOString()
       };
 
+      // Update wines array first
+      if (editingId) {
+        const index = wines.findIndex(w => w.id === editingId);
+        wines[index] = wine;
+      } else {
+        wines.push(wine);
+      }
+
+      // Then save to storage
       const saved = await saveWine(wine);
       if (saved) {
-        if (editingId) {
-          const index = wines.findIndex(w => w.id === editingId);
-          wines[index] = wine;
-        } else {
-          wines.push(wine);
-        }
         renderWines();
         closeModal();
+      } else {
+        // Revert changes if save failed
+        if (editingId) {
+          await loadWines(); // Reload from storage
+        } else {
+          wines.pop(); // Remove the newly added wine
+        }
       }
     }
 
@@ -840,11 +881,14 @@
       if (!editingId) return;
       
       if (confirm('Are you sure you want to delete this wine?')) {
-        const deleted = await deleteWine(`wine:${editingId}`);
+        wines = wines.filter(w => w.id !== editingId);
+        const deleted = await deleteWine(editingId);
         if (deleted) {
-          wines = wines.filter(w => w.id !== editingId);
           renderWines();
           closeModal();
+        } else {
+          // Reload if delete failed
+          await loadWines();
         }
       }
     }
@@ -854,3 +898,4 @@
   </script>
 </body>
 </html>
+
