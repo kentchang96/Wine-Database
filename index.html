@@ -471,14 +471,72 @@
     .photo-preview {
       width: 100%;
       max-height: 200px;
-      object-fit: cover;
+      object-fit: contain;
       border-radius: 8px;
       margin-top: 10px;
       display: none;
+      cursor: move;
+      user-select: none;
     }
 
     .photo-preview.visible {
       display: block;
+    }
+
+    .photo-container {
+      position: relative;
+      width: 100%;
+      max-height: 200px;
+      overflow: hidden;
+      border-radius: 8px;
+      margin-top: 10px;
+      background: var(--gray-light);
+      display: none;
+    }
+
+    .photo-container.visible {
+      display: block;
+    }
+
+    .photo-container img {
+      width: 100%;
+      height: auto;
+      cursor: grab;
+      user-select: none;
+      touch-action: none;
+    }
+
+    .photo-container img:active {
+      cursor: grabbing;
+    }
+
+    .photo-controls {
+      display: flex;
+      gap: 8px;
+      margin-top: 8px;
+      display: none;
+    }
+
+    .photo-controls.visible {
+      display: flex;
+    }
+
+    .photo-controls button {
+      flex: 1;
+      padding: 6px;
+      background: white;
+      border: 2px solid var(--wine-red);
+      border-radius: 6px;
+      color: var(--wine-red);
+      font-size: 0.8rem;
+      cursor: pointer;
+      font-family: 'Montserrat', sans-serif;
+      font-weight: 500;
+    }
+
+    .photo-controls button:active {
+      background: var(--wine-red);
+      color: white;
     }
 
     .rating-input {
@@ -588,15 +646,16 @@
   <div class="search-filter">
     <input type="text" class="search-box" id="searchBox" placeholder="Search wines...">
     
-    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
-      <div class="filter-chips" style="flex: 1;">
-        <button class="chip active" data-filter="all">All</button>
-        <button class="chip" data-filter="Red">Red</button>
-        <button class="chip" data-filter="White">White</button>
-        <button class="chip" data-filter="Rosé">Rosé</button>
-        <button class="chip" data-filter="Sparkling">Sparkling</button>
-      </div>
-      
+    <div class="filter-chips">
+      <button class="chip active" data-filter="all">All</button>
+      <button class="chip" data-filter="Red">Red</button>
+      <button class="chip" data-filter="White">White</button>
+      <button class="chip" data-filter="Rosé">Rosé</button>
+      <button class="chip" data-filter="Sparkling">Sparkling</button>
+    </div>
+    
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 10px;">
+      <span style="font-size: 0.8rem; color: var(--gray); font-weight: 500;">View:</span>
       <div class="view-toggle" style="display: flex; gap: 5px;">
         <button class="view-btn active" data-view="grid" title="Grid View">⊞</button>
         <button class="view-btn" data-view="compact" title="Compact View">☰</button>
@@ -653,7 +712,13 @@
           <div class="url-input-group" id="urlInputGroup">
             <input type="url" id="photoUrl" placeholder="Enter image URL">
           </div>
-          <img id="photoPreview" class="photo-preview" alt="Wine photo preview">
+          <div class="photo-container" id="photoContainer">
+            <img id="photoPreview" alt="Wine photo preview">
+          </div>
+          <div class="photo-controls" id="photoControls">
+            <button type="button" id="resetPhotoBtn">Reset Position</button>
+            <button type="button" id="downloadPhotoBtn">Download Photo</button>
+          </div>
         </div>
 
         <div class="form-group">
@@ -734,6 +799,13 @@
     let editingId = null;
     let currentFilter = 'all';
     let currentView = 'grid'; // grid, compact, or list
+    
+    // Photo panning state
+    let photoOffsetX = 0;
+    let photoOffsetY = 0;
+    let isDragging = false;
+    let startX = 0;
+    let startY = 0;
 
     // Helper function to get price symbol
     function getPriceSymbol(price) {
@@ -761,6 +833,7 @@
       populateFilterDropdowns();
       renderWines();
       setupEventListeners();
+      setupPhotoPanning();
       checkForSharedMode();
     }
 
@@ -1118,6 +1191,10 @@
       document.getElementById('photoFile').addEventListener('change', handleFileUpload);
       document.getElementById('photoUrl').addEventListener('input', handleUrlInput);
 
+      // Photo controls
+      document.getElementById('resetPhotoBtn').addEventListener('click', resetPhotoPosition);
+      document.getElementById('downloadPhotoBtn').addEventListener('click', downloadPhoto);
+
       // Rating stars
       document.querySelectorAll('#ratingInput span').forEach(star => {
         star.addEventListener('click', (e) => {
@@ -1224,8 +1301,12 @@
             console.log('Compressed photo size:', compressedSizeKB, 'KB');
             
             const preview = document.getElementById('photoPreview');
+            const container = document.getElementById('photoContainer');
+            const controls = document.getElementById('photoControls');
             preview.src = currentPhoto;
-            preview.classList.add('visible');
+            container.classList.add('visible');
+            controls.classList.add('visible');
+            resetPhotoPosition();
           };
           img.src = e.target.result;
         };
@@ -1238,9 +1319,83 @@
       if (url) {
         currentPhoto = url;
         const preview = document.getElementById('photoPreview');
+        const container = document.getElementById('photoContainer');
+        const controls = document.getElementById('photoControls');
         preview.src = url;
-        preview.classList.add('visible');
+        container.classList.add('visible');
+        controls.classList.add('visible');
+        resetPhotoPosition();
       }
+    }
+
+    // Photo panning functions
+    function setupPhotoPanning() {
+      const photo = document.getElementById('photoPreview');
+      
+      // Mouse events
+      photo.addEventListener('mousedown', (e) => {
+        isDragging = true;
+        startX = e.clientX - photoOffsetX;
+        startY = e.clientY - photoOffsetY;
+        photo.style.cursor = 'grabbing';
+      });
+
+      document.addEventListener('mousemove', (e) => {
+        if (isDragging) {
+          photoOffsetX = e.clientX - startX;
+          photoOffsetY = e.clientY - startY;
+          photo.style.transform = `translate(${photoOffsetX}px, ${photoOffsetY}px)`;
+        }
+      });
+
+      document.addEventListener('mouseup', () => {
+        isDragging = false;
+        const photo = document.getElementById('photoPreview');
+        photo.style.cursor = 'grab';
+      });
+
+      // Touch events
+      photo.addEventListener('touchstart', (e) => {
+        isDragging = true;
+        const touch = e.touches[0];
+        startX = touch.clientX - photoOffsetX;
+        startY = touch.clientY - photoOffsetY;
+      });
+
+      document.addEventListener('touchmove', (e) => {
+        if (isDragging) {
+          const touch = e.touches[0];
+          photoOffsetX = touch.clientX - startX;
+          photoOffsetY = touch.clientY - startY;
+          const photo = document.getElementById('photoPreview');
+          photo.style.transform = `translate(${photoOffsetX}px, ${photoOffsetY}px)`;
+        }
+      });
+
+      document.addEventListener('touchend', () => {
+        isDragging = false;
+      });
+    }
+
+    function resetPhotoPosition() {
+      photoOffsetX = 0;
+      photoOffsetY = 0;
+      const photo = document.getElementById('photoPreview');
+      photo.style.transform = 'translate(0, 0)';
+    }
+
+    function downloadPhoto() {
+      if (!currentPhoto) {
+        alert('No photo to download');
+        return;
+      }
+
+      const link = document.createElement('a');
+      link.href = currentPhoto;
+      link.download = 'wine-photo.jpg';
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
     }
 
     function updateRatingDisplay() {
@@ -1260,9 +1415,11 @@
       document.getElementById('submitButton').textContent = 'Add to Collection';
       document.getElementById('deleteButton').style.display = 'none';
       document.getElementById('wineForm').reset();
-      document.getElementById('photoPreview').classList.remove('visible');
+      document.getElementById('photoContainer').classList.remove('visible');
+      document.getElementById('photoControls').classList.remove('visible');
       currentRating = 0;
       currentPhoto = '';
+      resetPhotoPosition();
       updateRatingDisplay();
       document.getElementById('wineModal').classList.add('active');
     }
@@ -1290,8 +1447,13 @@
       updateRatingDisplay();
       
       if (wine.photo) {
-        document.getElementById('photoPreview').src = wine.photo;
-        document.getElementById('photoPreview').classList.add('visible');
+        const preview = document.getElementById('photoPreview');
+        const container = document.getElementById('photoContainer');
+        const controls = document.getElementById('photoControls');
+        preview.src = wine.photo;
+        container.classList.add('visible');
+        controls.classList.add('visible');
+        resetPhotoPosition();
       }
       
       document.getElementById('wineModal').classList.add('active');
