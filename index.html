@@ -647,9 +647,6 @@
         </button>
       </div>
       <div class="subtitle">Personal Collection</div>
-      <button id="tasteProfileBtn" style="width: 100%; margin-top: 10px; background: linear-gradient(135deg, var(--wine-red) 0%, var(--wine-deep) 100%); border: none; color: white; padding: 10px; border-radius: 8px; font-size: 0.85rem; cursor: pointer; font-family: 'Montserrat', sans-serif; font-weight: 600; letter-spacing: 0.5px;">
-        🤖 Analyze My Taste Profile
-      </button>
     </div>
   </div>
 
@@ -797,9 +794,6 @@
 
         <button type="submit" class="submit-button" id="submitButton">Add to Collection</button>
         <button type="button" class="delete-button" id="deleteButton" style="display: none;">Delete Wine</button>
-        <button type="button" id="askClaudeBtn" style="width: 100%; padding: 12px; background: linear-gradient(135deg, #6366f1 0%, #4f46e5 100%); color: white; border: none; border-radius: 8px; font-family: 'Montserrat', sans-serif; font-weight: 600; font-size: 0.9rem; cursor: pointer; margin-top: 10px; display: none;">
-          🤖 Ask Claude About This Wine
-        </button>
       </form>
     </div>
   </div>
@@ -947,106 +941,6 @@
         } catch (error) {
           console.error('Failed to save to shared storage:', error);
         }
-      }
-    }
-
-    // Ask Claude about a specific wine
-    async function askClaudeAboutWine(wine) {
-      const loadingMsg = alert('Asking Claude about this wine...');
-      
-      try {
-        const prompt = `I have a wine in my collection: ${wine.name}` +
-          (wine.vintage ? ` from ${wine.vintage}` : '') +
-          (wine.type ? `, it's a ${wine.type}` : '') +
-          (wine.location ? ` from ${wine.location}` : '') +
-          `. Can you summarize the wine's characteristics, typical flavor profile, and what professional critics say about it? Please be concise but informative.`;
-
-        const response = await fetch("https://api.anthropic.com/v1/messages", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            model: "claude-sonnet-4-20250514",
-            max_tokens: 1000,
-            messages: [
-              { role: "user", content: prompt }
-            ],
-          })
-        });
-
-        const data = await response.json();
-        const claudeResponse = data.content
-          .map(item => (item.type === "text" ? item.text : ""))
-          .filter(Boolean)
-          .join("\n");
-
-        alert(claudeResponse || 'Claude could not provide information about this wine.');
-      } catch (error) {
-        console.error('Error calling Claude:', error);
-        alert('Unable to connect to Claude. Make sure you have internet connection.');
-      }
-    }
-
-    // Analyze taste profile across all wines
-    async function analyzeTasteProfile() {
-      if (wines.length === 0) {
-        alert('Add some wines to your collection first!');
-        return;
-      }
-
-      alert('Analyzing your taste profile...');
-
-      try {
-        // Prepare wine data for Claude
-        const topRatedWines = wines
-          .filter(w => w.rating >= 7)
-          .sort((a, b) => b.rating - a.rating)
-          .slice(0, 10)
-          .map(w => `${w.name}${w.vintage ? ' (' + w.vintage + ')' : ''} - ${w.type || 'Unknown type'}${w.location ? ' from ' + w.location : ''} - Rating: ${w.rating}/10${w.notes ? ' - Notes: ' + w.notes : ''}`);
-
-        const avgRating = (wines.reduce((sum, w) => sum + (w.rating || 0), 0) / wines.length).toFixed(1);
-        
-        const colorBreakdown = {};
-        wines.forEach(w => {
-          colorBreakdown[w.color] = (colorBreakdown[w.color] || 0) + 1;
-        });
-
-        const prompt = `Based on my wine collection, analyze my taste profile:\n\n` +
-          `Total wines: ${wines.length}\n` +
-          `Average rating: ${avgRating}/10\n` +
-          `Wine colors: ${Object.entries(colorBreakdown).map(([k,v]) => `${k}: ${v}`).join(', ')}\n\n` +
-          `My highest-rated wines:\n${topRatedWines.join('\n')}\n\n` +
-          `Please provide a concise taste profile analysis including:\n` +
-          `1. What types of wines I tend to prefer\n` +
-          `2. Common characteristics in my top-rated wines\n` +
-          `3. Recommendations for wines I might enjoy based on my preferences`;
-
-        const response = await fetch("https://api.anthropic.com/v1/messages", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            model: "claude-sonnet-4-20250514",
-            max_tokens: 1000,
-            messages: [
-              { role: "user", content: prompt }
-            ],
-          })
-        });
-
-        const data = await response.json();
-        const claudeResponse = data.content
-          .map(item => (item.type === "text" ? item.text : ""))
-          .filter(Boolean)
-          .join("\n");
-
-        // Show response in a more readable format
-        alert('Your Taste Profile:\n\n' + claudeResponse);
-      } catch (error) {
-        console.error('Error analyzing taste profile:', error);
-        alert('Unable to analyze taste profile. Make sure you have internet connection.');
       }
     }
 
@@ -1370,17 +1264,6 @@
       document.getElementById('shareButton').addEventListener('click', shareCollection);
       document.getElementById('syncButton').addEventListener('click', syncCollection);
 
-      // Claude AI buttons
-      document.getElementById('tasteProfileBtn').addEventListener('click', analyzeTasteProfile);
-      document.getElementById('askClaudeBtn').addEventListener('click', () => {
-        if (editingId) {
-          const wine = wines.find(w => w.id === editingId);
-          if (wine) {
-            askClaudeAboutWine(wine);
-          }
-        }
-      });
-
       // Close modal on background click
       document.getElementById('wineModal').addEventListener('click', (e) => {
         if (e.target.id === 'wineModal') closeModal();
@@ -1540,7 +1423,6 @@
       document.getElementById('modalTitle').textContent = 'Add Wine';
       document.getElementById('submitButton').textContent = 'Add to Collection';
       document.getElementById('deleteButton').style.display = 'none';
-      document.getElementById('askClaudeBtn').style.display = 'none';
       document.getElementById('wineForm').reset();
       document.getElementById('photoContainer').classList.remove('visible');
       document.getElementById('photoControls').classList.remove('visible');
@@ -1559,7 +1441,6 @@
       document.getElementById('modalTitle').textContent = 'Edit Wine';
       document.getElementById('submitButton').textContent = 'Update Wine';
       document.getElementById('deleteButton').style.display = 'block';
-      document.getElementById('askClaudeBtn').style.display = 'block';
       
       document.getElementById('wineName').value = wine.name;
       document.getElementById('vintage').value = wine.vintage || '';
