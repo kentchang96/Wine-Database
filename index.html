@@ -638,17 +638,19 @@
   <div class="header">
     <div class="header-content">
       <div style="display: flex; justify-content: space-between; align-items: center;">
-        <button id="syncButton" style="background: rgba(212, 175, 55, 0.2); border: 1px solid var(--gold); color: var(--gold); padding: 6px 12px; border-radius: 6px; font-size: 0.75rem; cursor: pointer; font-family: 'Montserrat', sans-serif; font-weight: 500;">
-          🔄 Sync
+        <button id="importButton" style="background: rgba(212, 175, 55, 0.2); border: 1px solid var(--gold); color: var(--gold); padding: 6px 12px; border-radius: 6px; font-size: 0.75rem; cursor: pointer; font-family: 'Montserrat', sans-serif; font-weight: 500;">
+          📥 Import
         </button>
         <h1 style="margin: 0; flex: 1; text-align: center;">Wine Cellar</h1>
-        <button id="shareButton" style="background: rgba(212, 175, 55, 0.2); border: 1px solid var(--gold); color: var(--gold); padding: 6px 12px; border-radius: 6px; font-size: 0.75rem; cursor: pointer; font-family: 'Montserrat', sans-serif; font-weight: 500;">
-          📤 Share
+        <button id="exportButton" style="background: rgba(212, 175, 55, 0.2); border: 1px solid var(--gold); color: var(--gold); padding: 6px 12px; border-radius: 6px; font-size: 0.75rem; cursor: pointer; font-family: 'Montserrat', sans-serif; font-weight: 500;">
+          📤 Export
         </button>
       </div>
       <div class="subtitle">Personal Collection</div>
     </div>
   </div>
+  
+  <input type="file" id="importFile" accept=".json" style="display: none;">
 
   <div class="search-filter">
     <input type="text" class="search-box" id="searchBox" placeholder="Search wines...">
@@ -798,8 +800,56 @@
     </div>
   </div>
 
+  <!-- Firebase SDK -->
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-database-compat.js"></script>
+
   <script>
-    // Storage using localStorage
+    // ============================================
+    // FIREBASE CONFIGURATION
+    // ============================================
+    // SETUP INSTRUCTIONS:
+    // 1. Go to https://console.firebase.google.com/
+    // 2. Click "Add project" and create a new project (free)
+    // 3. Go to Project Settings > General
+    // 4. Scroll down to "Your apps" and click the web icon (</>)
+    // 5. Register your app and copy the firebaseConfig object
+    // 6. Replace the config below with your values
+    
+    const firebaseConfig = {
+      apiKey: "AIzaSyARMLF8JpXaNsUv-ZSXl_NHMP6pGJdaovY",
+      authDomain: "YOUR_PROJECT_ID.firebaseapp.com",
+      databaseURL: "https://wine-database-50e21-default-rtdb.firebaseio.com",
+      projectId: "wine-database-50e21",
+      storageBucket: "wine-database-50e21.firebasestorage.app",
+      messagingSenderId: "581634842261",
+      appId: "1:581634842261:web:64e241d360e4be419d859c"
+    };
+
+    // Initialize Firebase
+    let firebaseInitialized = false;
+    let database = null;
+    let winesRef = null;
+
+    try {
+      if (firebaseConfig.apiKey !== "YOUR_API_KEY_HERE") {
+        firebase.initializeApp(firebaseConfig);
+        database = firebase.database();
+        winesRef = database.ref('wines');
+        firebaseInitialized = true;
+        console.log('Firebase initialized successfully');
+      } else {
+        console.log('Firebase not configured - using localStorage only');
+      }
+    } catch (error) {
+      console.error('Firebase initialization error:', error);
+      console.log('Falling back to localStorage only');
+    }
+
+    // ============================================
+    // MAIN APPLICATION CODE
+    // ============================================
+    // Storage using localStorage and Firebase
     let wines = [];
     let currentRating = 0;
     let currentPhoto = '';
@@ -836,114 +886,22 @@
         console.error('localStorage not available:', error);
       }
       
+      // Update subtitle based on Firebase status
+      if (firebaseInitialized) {
+        document.querySelector('.subtitle').textContent = 'Synced Collection';
+        document.querySelector('.subtitle').style.color = '#4ade80'; // Green
+      } else {
+        document.querySelector('.subtitle').textContent = 'Local Collection';
+      }
+      
       loadWines();
       populateFilterDropdowns();
       renderWines();
       setupEventListeners();
       setupPhotoPanning();
-      checkForSharedMode();
     }
 
     // Check if app is in shared mode (collaborative)
-    function checkForSharedMode() {
-      const sharedKey = localStorage.getItem('wineCollection_sharedKey');
-      if (sharedKey) {
-        document.querySelector('.subtitle').textContent = 'Shared Collection';
-      }
-    }
-
-    // Share collection
-    async function shareCollection() {
-      const shareKey = 'wine_' + Date.now().toString(36);
-      
-      const message = `Share your wine collection!\n\n` +
-        `To collaborate:\n` +
-        `1. Share this key with others: ${shareKey}\n` +
-        `2. They click "Sync" and enter this key\n` +
-        `3. You'll all see the same wines!\n\n` +
-        `Current wines will be uploaded to shared storage.`;
-      
-      if (confirm(message)) {
-        try {
-          // Save to shared storage
-          await window.storage.set(shareKey, JSON.stringify(wines), true);
-          localStorage.setItem('wineCollection_sharedKey', shareKey);
-          
-          // Copy to clipboard if available
-          if (navigator.clipboard) {
-            await navigator.clipboard.writeText(shareKey);
-            alert('Share key copied to clipboard!\n\nKey: ' + shareKey + '\n\nOthers can use this key to sync with your collection.');
-          } else {
-            prompt('Share this key with others:', shareKey);
-          }
-          
-          document.querySelector('.subtitle').textContent = 'Shared Collection';
-        } catch (error) {
-          // Fallback if window.storage not available
-          prompt('Share this key with others (window.storage not available, manual sync only):', shareKey);
-          localStorage.setItem('wineCollection_sharedKey', shareKey);
-        }
-      }
-    }
-
-    // Sync with shared collection
-    async function syncCollection() {
-      const currentKey = localStorage.getItem('wineCollection_sharedKey');
-      
-      if (currentKey) {
-        const action = confirm('You are currently synced with key: ' + currentKey + '\n\nClick OK to reload shared wines, or Cancel to connect to a different collection.');
-        
-        if (action) {
-          await loadSharedWines(currentKey);
-          return;
-        }
-      }
-      
-      const shareKey = prompt('Enter the share key you received:');
-      
-      if (shareKey) {
-        try {
-          await loadSharedWines(shareKey);
-        } catch (error) {
-          alert('Could not connect to shared collection. Make sure the key is correct and the collection exists.');
-        }
-      }
-    }
-
-    // Load wines from shared storage
-    async function loadSharedWines(shareKey) {
-      try {
-        const result = await window.storage.get(shareKey, true);
-        if (result && result.value) {
-          wines = JSON.parse(result.value);
-          localStorage.setItem('wineCollection_sharedKey', shareKey);
-          localStorage.setItem('wineCollection', result.value); // Backup locally
-          populateFilterDropdowns();
-          renderWines();
-          document.querySelector('.subtitle').textContent = 'Shared Collection';
-          alert('Successfully synced with shared collection!\n\n' + wines.length + ' wines loaded.');
-        } else {
-          alert('No collection found with this key.');
-        }
-      } catch (error) {
-        console.error('Sync error:', error);
-        alert('Sync failed. Make sure you have the correct key.');
-      }
-    }
-
-    // Save to both local and shared storage
-    async function saveToSharedStorage() {
-      const sharedKey = localStorage.getItem('wineCollection_sharedKey');
-      if (sharedKey) {
-        try {
-          await window.storage.set(sharedKey, JSON.stringify(wines), true);
-          console.log('Saved to shared storage');
-        } catch (error) {
-          console.error('Failed to save to shared storage:', error);
-        }
-      }
-    }
-
     // Populate filter dropdowns based on existing wines
     function populateFilterDropdowns() {
       // Get unique types
@@ -959,19 +917,118 @@
         locations.map(l => `<option value="${l}">${l}</option>`).join('');
     }
 
-    // Load wines from localStorage
+    // Export collection to JSON file
+    function exportCollection() {
+      if (wines.length === 0) {
+        alert('No wines to export. Add some wines first!');
+        return;
+      }
+
+      const dataStr = JSON.stringify(wines, null, 2);
+      const dataBlob = new Blob([dataStr], { type: 'application/json' });
+      const url = URL.createObjectURL(dataBlob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `wine-collection-${new Date().toISOString().split('T')[0]}.json`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+      
+      alert(`Exported ${wines.length} wines!\n\nYou can share this file with others or use it as a backup.`);
+    }
+
+    // Import collection from JSON file
+    function importCollection(event) {
+      const file = event.target.files[0];
+      if (!file) return;
+
+      const reader = new FileReader();
+      reader.onload = function(e) {
+        try {
+          const importedWines = JSON.parse(e.target.result);
+          
+          if (!Array.isArray(importedWines)) {
+            alert('Invalid file format. Please select a valid wine collection file.');
+            return;
+          }
+
+          const action = confirm(
+            `Import ${importedWines.length} wines?\n\n` +
+            `Choose OK to REPLACE your current collection (${wines.length} wines)\n` +
+            `Choose Cancel to MERGE with your current collection`
+          );
+
+          if (action) {
+            // Replace
+            wines = importedWines;
+          } else {
+            // Merge - add imported wines with new IDs to avoid conflicts
+            importedWines.forEach(wine => {
+              wine.id = Date.now() + Math.random();
+              wines.push(wine);
+            });
+          }
+
+          const saved = saveAllWines();
+          if (saved) {
+            populateFilterDropdowns();
+            renderWines();
+            alert(`Successfully imported ${importedWines.length} wines!\n\nTotal wines: ${wines.length}`);
+          }
+        } catch (error) {
+          console.error('Import error:', error);
+          alert('Failed to import file. Please make sure it\'s a valid wine collection JSON file.');
+        }
+      };
+      reader.readAsText(file);
+      
+      // Reset file input so same file can be imported again
+      event.target.value = '';
+    }
+
+    // Load wines from localStorage and Firebase
     function loadWines() {
       try {
+        // First load from localStorage (instant)
         const storedWines = localStorage.getItem('wineCollection');
         wines = storedWines ? JSON.parse(storedWines) : [];
-        console.log('Loaded wines:', wines.length);
+        console.log('Loaded wines from localStorage:', wines.length);
+
+        // Then sync with Firebase if available
+        if (firebaseInitialized) {
+          syncWithFirebase();
+        }
       } catch (error) {
         console.error('Error loading wines:', error);
         wines = [];
       }
     }
 
-    // Save all wines to localStorage
+    // Sync with Firebase real-time database
+    function syncWithFirebase() {
+      if (!firebaseInitialized) return;
+
+      // Listen for changes in Firebase
+      winesRef.on('value', (snapshot) => {
+        const firebaseWines = snapshot.val();
+        if (firebaseWines) {
+          wines = Object.values(firebaseWines);
+          console.log('Synced from Firebase:', wines.length, 'wines');
+          
+          // Save to localStorage as backup
+          localStorage.setItem('wineCollection', JSON.stringify(wines));
+          
+          // Update UI
+          populateFilterDropdowns();
+          renderWines();
+        }
+      }, (error) => {
+        console.error('Firebase sync error:', error);
+      });
+    }
+
+    // Save all wines to localStorage and Firebase
     function saveAllWines() {
       try {
         const dataToSave = JSON.stringify(wines);
@@ -988,11 +1045,14 @@
           });
         }
         
+        // Save to localStorage
         localStorage.setItem('wineCollection', dataToSave);
-        console.log('Successfully saved wines:', wines.length);
+        console.log('Successfully saved wines to localStorage:', wines.length);
         
-        // Also save to shared storage if in shared mode
-        saveToSharedStorage();
+        // Save to Firebase if available
+        if (firebaseInitialized) {
+          saveToFirebase();
+        }
         
         return true;
       } catch (error) {
@@ -1011,6 +1071,30 @@
           alert('Failed to save: ' + error.message + '\n\nError type: ' + error.name + '\n\nTry:\n• Check Edge settings > Cookies and site permissions\n• Access via your GitHub Pages URL\n• Make sure site data is allowed');
         }
         return false;
+      }
+    }
+
+    // Save wines to Firebase
+    function saveToFirebase() {
+      if (!firebaseInitialized) return;
+
+      try {
+        // Convert wines array to object with IDs as keys
+        const winesObject = {};
+        wines.forEach(wine => {
+          winesObject[wine.id] = wine;
+        });
+
+        // Save to Firebase (this will trigger sync for all users)
+        winesRef.set(winesObject)
+          .then(() => {
+            console.log('Successfully saved to Firebase');
+          })
+          .catch((error) => {
+            console.error('Firebase save error:', error);
+          });
+      } catch (error) {
+        console.error('Error saving to Firebase:', error);
       }
     }
 
@@ -1241,6 +1325,13 @@
         });
       });
 
+      // Export and import buttons
+      document.getElementById('exportButton').addEventListener('click', exportCollection);
+      document.getElementById('importButton').addEventListener('click', () => {
+        document.getElementById('importFile').click();
+      });
+      document.getElementById('importFile').addEventListener('change', importCollection);
+
       // Advanced filter dropdowns
       document.getElementById('filterType').addEventListener('change', renderWines);
       document.getElementById('filterLocation').addEventListener('change', renderWines);
@@ -1259,10 +1350,6 @@
           toggleBtn.textContent = 'Show Advanced Filters';
         }
       });
-
-      // Share and sync buttons
-      document.getElementById('shareButton').addEventListener('click', shareCollection);
-      document.getElementById('syncButton').addEventListener('click', syncCollection);
 
       // Close modal on background click
       document.getElementById('wineModal').addEventListener('click', (e) => {
